@@ -1,0 +1,19 @@
+MODULE ManufacturingOrderInvCustom;
+
+REQUIRE ManufacturingOrderInv, BomCustom;
+
+NAMESPACE Manufacturing;
+
+locationSource = DATA Location (ConsumedLine);
+locationResult= DATA Location (FinishedLine);
+
+fill(ConsumedLine cl, ComponentLine l) +{
+    locationSource(cl) <- overLocationSource(l);
+}
+
+fill(FinishedLine fl, Bom b) +{
+    locationResult(fl) <- locationResult(b);
+}
+
+locationSource(ManufacturingOrderInvLedger l) = locationSource(line(l));
+locationResult(ManufacturingOrderInv l) += locationResult(line(l));

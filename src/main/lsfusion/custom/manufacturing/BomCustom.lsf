@@ -1,0 +1,33 @@
+MODULE BomCustom;
+
+REQUIRE Bom, Location;
+
+NAMESPACE Manufacturing;
+
+locationResult = DATA Location (Bom);
+nameLocationResult 'Место хранения результата' (Bom b) = name(locationResult(b));
+
+locationSource = DATA Location (Bom);
+nameLocationSource 'Место хранения источник' (Bom b) = name(locationSource(b));
+
+locationSource = DATA Location (ComponentLine);
+nameLocationSource 'Место хранения источник' (ComponentLine l) = name(locationSource(l));
+
+overLocationSource (ComponentLine l) = OVERRIDE locationSource(l), locationSource(bom(l));
+nameOverLocationSource 'Место хранения источник' (ComponentLine l) = name(overLocationSource(l));
+
+
+EXTEND FORM bom
+    PROPERTIES (b) nameLocationResult, nameLocationSource
+    PROPERTIES (c) nameOverLocationSource
+;
+
+DESIGN bom{
+    headerRight{
+        NEW locations{
+            MOVE PROPERTY (nameLocationResult(b));
+            MOVE PROPERTY (nameLocationSource(b));
+        }
+    }
+}
+

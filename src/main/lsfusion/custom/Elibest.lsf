@@ -13,6 +13,6 @@ REQUIRE Eval, ProcessMonitor, Backup, Chat, Documentation,
         CRM,
         Fleet,
         BillReceiptCost, BillReceiptCostService, // initialize after Purchase
-        
-        
+
+
         OperationTypes, WorkOrderOperationCustom;

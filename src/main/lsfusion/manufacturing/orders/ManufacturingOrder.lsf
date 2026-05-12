@@ -321,6 +321,9 @@ DESIGN manufacturingOrder {
 // fill
 fillByQuantity ABSTRACT LIST (ManufacturingOrder, NUMERIC[16,3]);
 
+fill ABSTRACT LIST (ConsumedLine, ComponentLine);
+fill ABSTRACT LIST (FinishedLine, Bom);
+
 fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) +{
     DELETE ConsumedLine l WHERE manufacturingOrder(l) = o; 
     DELETE FinishedLine l WHERE manufacturingOrder(l) = o;
@@ -350,6 +353,7 @@ fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) +{
             manufacturingOrder(l) <- o;
             item(l) <- item(cl);
             toConsume(l) <- NUMERIC[16,3](quantity(bom(o), cl, path) * q / quantity(bom(o)));
+            fill(l, cl);
         }
                 
         NEW l = FinishedLine {
@@ -357,6 +361,7 @@ fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) +{
             item(l) <- item(o);
             uom(l) <- uom(o);
             toProduce(l) <- q;
+            fill(l, bom(o));
         }
                 
         FOR bom(ByproductLine bl) = bom(o) DO NEW l = FinishedLine {

@@ -1,0 +1,64 @@
+MODULE WorkOrderOperationCustom;
+
+REQUIRE WorkOrderOperation, BomCustom;
+
+NAMESPACE Manufacturing;
+
+isDirectParent (Bom b, Bom p) = GROUP SUM 1 IF b == nestedBom(ComponentLine cl) AND p == bom(cl);
+
+level (Bom child, Bom parent) = RECURSION 1l IF child IS Bom AND parent == child
+    STEP 2l IF isDirectParent($parent, parent);
+
+parent(Bom b, ManufacturingOrder mo) = GROUP MAX Bom bb IF bom(ComponentLine cl) == bb AND nestedBom(cl) == b AND level(bb, bom(mo)) AND b != bom(mo);
+parentLoc = DATA LOCAL ManufacturingOrder();
+parentLoc (Bom b) = parent(b, parentLoc());
+
+CLASS WorkStep 'Этап производства';
+name 'Этап' = DATA ISTRING[100](WorkStep);
+parent = DATA WorkStep(WorkStep);
+manufacturingOrder = DATA ManufacturingOrder(WorkStep);
+createdStep = DATA LOCAL WorkStep (Bom);
+workStep = DATA WorkStep(WorkOrder);
+
+fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
+    DELETE WorkStep ws WHERE manufacturingOrder(ws) = o;
+    FOR level(Bom b, bom(o)) ORDER level(b, bom(o)) DO NEW ws = WorkStep {
+        name(ws) <- 'Этап: ' + name(b);
+        manufacturingOrder(ws) <- o;
+        createdStep(b) <- ws;
+        workStep(WorkOrder wo) <- ws WHERE bom(operation(wo)) = b AND manufacturingOrder(wo) = o; 
+        IF parent(b, o) THEN {
+            parent(ws) <- createdStep(parent(b, o));
+        }
+    }
+}
+
+EXTEND FORM manufacturingOrder
+    TREE workOrderOperation ws 'Производственные задания' = WorkStep PARENT parent(ws)
+    PROPERTIES (ws) name
+    OBJECTS opt 'Операции' = WorkOrder
+    PROPERTIES(opt) name, imagedNameStatus BACKGROUND colorStatus(opt), nameWorkCenter, startDate, startTime, duration, descriptionBom
+    FILTERS workStep(opt) = ws
+;
+
+
+DESIGN manufacturingOrder {
+    details {
+        REMOVE BOX(wo);
+        NEW workOperationsPane {
+            fill = 1;
+            horizontal = TRUE;
+            caption = 'Производственные задания'; 
+            MOVE BOX(TREE workOrderOperation) {
+                fill = 1;
+                caption = badged('Work orders', countWorkOrder(o));
+            }
+            MOVE BOX(opt) {
+                fill = 2;
+            }
+        }
+    }
+}
+
+
+
