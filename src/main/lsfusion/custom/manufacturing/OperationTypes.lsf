@@ -1,0 +1,43 @@
+MODULE OperationTypes;
+
+REQUIRE BomOperation;
+
+NAMESPACE Manufacturing;
+
+CLASS OperationType 'Тип операции';
+readonly = ABSTRACT CASE BOOLEAN (OperationType);
+
+@defineNumber(operationType, 'Типы операций', 'TO');
+
+operationType (STRING[50] id) = GROUP AGGR OperationType o BY number(o);
+
+name 'Наименование' = DATA ISTRING[50] (OperationType) IN id;
+description 'Описание' (OperationType o) = badged(name(o), number(o)) IN id;
+
+type = DATA OperationType(Operation);
+nameType 'Тип операции' (Operation o) = name(type(o));
+
+EXTEND FORM operation
+    PROPERTIES(o) nameType
+;
+
+EXTEND FORM operations
+    PROPERTIES(o) nameType FIRST 
+; 
+
+EXTEND FORM options
+    OBJECTS opt = OperationType
+    PROPERTIES(opt) READONLY number, name
+    PROPERTIES(opt) NEWSESSION NEW, EDIT, DELETE
+;
+
+DESIGN options {
+    tabbedPane {
+        MOVE BOX(opt) {
+            caption = 'Типы операций';
+        }
+    }
+}
+
+
+
