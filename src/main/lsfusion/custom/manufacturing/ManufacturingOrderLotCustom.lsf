@@ -1,0 +1,98 @@
+MODULE ManufacturingOrderLotCustom;
+
+REQUIRE ManufacturingOrder, WorkOrderOperationCustom, ManufacturingOrderLot;
+
+NAMESPACE Manufacturing;
+
+number 'Number' = DATA STRING (Lot);
+// Перечисление доступных компонентов номера
+CLASS LotComponent 'Компонент номера партии' {
+    date 'Дата изготовления',
+    numerator 'Порядковый номер (Нумератор)',
+    orderNumber 'Номер производственного заказа',
+    workCenters 'Идентификаторы рабочих центров',
+    executors 'Логины исполнителей'
+}
+name 'Наименование' (LotComponent c) = staticCaption(c) IF c IS LotComponent;
+
+// Таблица настройки структуры в параметрах производства
+CLASS LotStructure 'Структура номера партии';
+component 'Компонент' = DATA LotComponent (LotStructure) NONULL;
+nameComponent 'Компонент' (LotStructure s) = name(component(s));
+
+order 'Порядок в номере' = DATA INTEGER (LotStructure);
+lotSeparator 'Разделитель компонентов партии' = DATA STRING[5] ();
+
+
+EXTEND FORM options
+
+    OBJECTS ls = LotStructure
+    PROPERTIES(ls) order, nameComponent, NEW, DELETE GRID
+
+    PROPERTIES() lotSeparator
+;
+
+DESIGN options {
+    tabbedPane {
+        NEW lotSettings {
+            caption = 'Формирование партий';
+            fill = 1;
+
+            MOVE PROPERTY(lotSeparator());
+            MOVE BOX(ls) { fill = 1; }
+        }
+    }
+}
+
+
+workCentersList (ManufacturingOrder o) =
+    GROUP CONCAT id(workCenter(WorkOrder wo)), ' '  ORDER startDate(wo) BY manufacturingOrder(wo);
+
+executorsList (ManufacturingOrder o) =
+    GROUP CONCAT login(user(lastHistory(WorkOrder wo))), ' ' ORDER startDate(wo) BY manufacturingOrder(wo);
+
+// Вспомогательная функция для получения текстового значения компонента
+componentValue (LotComponent c, FinishedLine rl, STRING[48] currentNumerator) = CASE
+    WHEN c == LotComponent.date THEN STRING (currentDate())
+    WHEN c == LotComponent.numerator THEN currentNumerator
+    WHEN c == LotComponent.orderNumber THEN OVERRIDE number(manufacturingOrder(rl)), 'NO_ORDER'
+    WHEN c == LotComponent.workCenters THEN OVERRIDE workCentersList(manufacturingOrder(rl)), 'NO_WC'
+    WHEN c == LotComponent.executors THEN OVERRIDE executorsList(manufacturingOrder(rl)), 'NO_EMP'
+;
+
+// Переопределенное действие генерации
+generateLotCustom 'Generate' (FinishedLine rl) {
+    FOR Product p = item(rl) DO {
+        FOR iterate(INTEGER i, 1, IF useSerialNumbers(p) THEN toProduceLotLeft(rl) ELSE 1) DO NEW l = Lot  {
+            
+            incrementValue(numeratorLot(p));
+            LOCAL curNum = STRING[48]();
+            curNum() <- incrementedValue();
+            
+            LOCAL generatedNumber = STRING();
+
+            FOR order(LotStructure ls) DO {
+                LOCAL val = STRING();
+                val() <- componentValue(component(ls), rl, curNum());
+
+                generatedNumber() <- CONCAT lotSeparator(), generatedNumber(), val();
+            }
+
+            id(l) <- CONCAT '', prefixLot(p), curNum(); 
+            number(l) <- generatedNumber();             
+
+            product(l) <- item(rl);
+            toProduce(rl, l) <- IF useSerialNumbers(p) THEN 1 ELSE toProduceLotLeft(rl);
+        }
+    }
+}
+
+EXTEND FORM manufacturingOrder
+    PROPERTIES(l) generateLotCustom DRAW lotL TOOLBAR SHOWIF numeratorLot(item(l)) AND toProduceLotLeft(l) > 0
+    PROPERTIES (lotL) number BEFORE id(lotL)
+;
+
+
+DESIGN manufacturingOrder {
+    REMOVE PROPERTY (generateLot(l));
+}
