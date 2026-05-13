@@ -44,11 +44,16 @@ fill(ConsumedLine cl, ComponentLine l) +{
 }
 
 isFinishWorkStep(WorkStep s) = GROUP SUM 1 IF item(s) = item(manufacturingOrder(s));
+executionDateTime 'Execution date' = DATA DATETIME (WorkStep);
+quantity 'Кол-во' = DATA NUMERIC[16,3] (WorkStep);
+componentLine(Bom b, ManufacturingOrder o) = GROUP MAX ComponentLine cl IF nestedBom(cl) = b AND level(bom(cl), bom(o));
+ 
+WHEN SET(done(WorkStep o)) AND NOT CHANGED(executionDateTime(o)) DO executionDateTime(o) <- currentDateTime();
 
 fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
     DELETE WorkStep ws WHERE manufacturingOrder(ws) = o;
     FOR level(Bom b, bom(o)) ORDER level(b, bom(o)) DO NEW ws = WorkStep {
-        name(ws) <- 'Этап: ' + name(b);
+        name(ws) <- name(b);
         manufacturingOrder(ws) <- o;
         item(ws) <- item(b);
         uom(ws) <- uom(b);
@@ -57,21 +62,23 @@ fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
         createdStep(b) <- ws;
         workStep(WorkOrder wo) <- ws WHERE bom(operation(wo)) = b AND manufacturingOrder(wo) = o;
         sourceLine(ConsumedLine l) <- ws WHERE bom(componentLine(l)) = b AND manufacturingOrder(l) = o;
-
         IF parent(b, o) THEN {
             parent(ws) <- createdStep(parent(b, o));
         }
+        quantity(ws) <- OVERRIDE NUMERIC[16,3] (quantity(parent(ws)) * quantity(componentLine(b, o))), q;
     }
 }
 
 EXTEND FORM manufacturingOrder
     TREE workOrderOperation ws 'Производственные задания' = WorkStep PARENT parent(ws)
-    PROPERTIES (ws) READONLY name
+    PROPERTIES (ws) READONLY name, quantity, done
     FILTERS manufacturingOrder(ws) = o
     
     OBJECTS opt 'Операции' = WorkOrder
     PROPERTIES(opt) name, imagedNameStatus BACKGROUND colorStatus(opt), nameWorkCenter, startDate, startTime, duration, descriptionBom
     FILTERS workStep(opt) = ws
+    
+    PROPERTIES '' = name(item(componentLine(c))), '' = name(sourceLine(c))
 ;
 
 

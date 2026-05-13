@@ -14,18 +14,19 @@ fill(ConsumedLine cl, ComponentLine l) +{
 
 locationResult = ABSTRACT Location (ManufacturingOrderInvCustom);
 locationSource = ABSTRACT Location (ManufacturingOrderInvLedgerCustom);
+locationSource = ABSTRACT Location (ManufacturingOrderInvLedgerIntermediate);
 
-CLASS ManufacturingOrderInvCustom : InvLedger;
+CLASS ManufacturingOrderInvCustom 'Оприходывание полуфабриката' : InvLedger;
 manILedger = AGGR ManufacturingOrderInvCustom WHERE done(WorkStep line) AND item(line) IS Product;
 
 type(ManufacturingOrderInvCustom l) += nameType(manufacturingOrder(line(l)));
 
 active(ManufacturingOrderInvCustom l) += active(line(l));
-dateTime(ManufacturingOrderInvCustom l) += executionDateTime(manufacturingOrder(line(l)));
+dateTime(ManufacturingOrderInvCustom l) += executionDateTime(line(l));
 toLocation(ManufacturingOrderInvCustom l) += OVERRIDE locationResult(l), locationResult(line(l));
 
 product(ManufacturingOrderInvCustom l) += item(line(l)) AS Product;
-quantity(ManufacturingOrderInvCustom l) += toProduce(line(l));
+quantity(ManufacturingOrderInvCustom l) += quantity(line(l));
 
 number(ManufacturingOrderInvCustom l) += number(manufacturingOrder(line(l)));
 
@@ -37,12 +38,28 @@ manInvLedger = AGGR ManufacturingOrderInvLedgerCustom WHERE done(WorkStep ws) AN
 type(ManufacturingOrderInvLedgerCustom l) += nameType(manufacturingOrder(line(l)));
 
 active(ManufacturingOrderInvLedgerCustom l) += active(ws(l));
-dateTime(ManufacturingOrderInvLedgerCustom l) += executionDateTime(manufacturingOrder(line(l)));
+dateTime(ManufacturingOrderInvLedgerCustom l) += executionDateTime(line(l));
 fromLocation(ManufacturingOrderInvLedgerCustom l) += OVERRIDE locationSource(l), locationResult(line(l));
 
 product(ManufacturingOrderInvLedgerCustom l) += item(line(l)) AS Product;
-quantity(ManufacturingOrderInvLedgerCustom l) += consumed(line(l));
+quantity(ManufacturingOrderInvLedgerCustom l) += toConsume(line(l));
 
 number(ManufacturingOrderInvLedgerCustom l) += number(manufacturingOrder(line(l)));
 
 edit (ManufacturingOrderInvLedgerCustom l) + { edit(manufacturingOrder(line(l))); }
+
+CLASS ManufacturingOrderInvLedgerIntermediate 'Списание полуфабриката' : InvLedger;
+manInvLedger = AGGR ManufacturingOrderInvLedgerIntermediate WHERE done(WorkStep ws) AND parent(WorkStep line) = ws AND item(line) IS Product;
+
+type(ManufacturingOrderInvLedgerIntermediate l) += nameType(manufacturingOrder(line(l)));
+
+active(ManufacturingOrderInvLedgerIntermediate l) += active(ws(l));
+dateTime(ManufacturingOrderInvLedgerIntermediate l) += executionDateTime(line(l));
+fromLocation(ManufacturingOrderInvLedgerIntermediate l) += OVERRIDE locationSource(l), locationResult(line(l));
+
+product(ManufacturingOrderInvLedgerIntermediate l) += item(line(l)) AS Product;
+quantity(ManufacturingOrderInvLedgerIntermediate l) += quantity(line(l));
+
+number(ManufacturingOrderInvLedgerIntermediate l) += number(manufacturingOrder(line(l)));
+
+edit (ManufacturingOrderInvLedgerIntermediate l) + { edit(manufacturingOrder(line(l))); }
