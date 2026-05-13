@@ -1,6 +1,6 @@
 MODULE WorkOrderOperationCustom;
 
-REQUIRE WorkOrderOperation, BomCustom;
+REQUIRE WorkOrderOperation, WorkOrderDone, BomCustom, BomNested;
 
 NAMESPACE Manufacturing;
 
@@ -19,14 +19,45 @@ parent = DATA WorkStep(WorkStep);
 manufacturingOrder = DATA ManufacturingOrder(WorkStep);
 createdStep = DATA LOCAL WorkStep (Bom);
 workStep = DATA WorkStep(WorkOrder);
+sourceLine = DATA WorkStep(ConsumedLine);
+
+item '{Item}' = DATA Item (WorkStep);
+nameItem '{Item}' (WorkStep l) = name(item(l)) IN id;
+idBarCodeItem 'Barcode' (WorkStep l) = idBarCode(item(l));
+idItem '{ID}' (WorkStep l) = id(item(l));
+
+uom 'UoM' = DATA Uom (WorkStep);
+nameUom 'UoM' (WorkStep l) = name(uom(l));
+WHEN LOCAL CHANGED(item(WorkStep l)) DO uom(l) <- uom(item(l));
+
+toProduce '{Manufacture}' = DATA NUMERIC[16,3] (WorkStep);
+locationResult = DATA Location (WorkStep);
+
+componentLine = DATA ComponentLine(ConsumedLine);
+
+done 'Выполнен' (WorkStep s) = NOT GROUP SUM 1 IF workStep(WorkOrder o) = s AND NOT done(o);
+canceled 'Canceled' = DATA BOOLEAN (WorkStep);
+active '{Active}' (WorkStep o) = done(o) AND NOT canceled(o);
+
+fill(ConsumedLine cl, ComponentLine l) +{
+    componentLine(cl) <- l;
+}
+
+isFinishWorkStep(WorkStep s) = GROUP SUM 1 IF item(s) = item(manufacturingOrder(s));
 
 fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
     DELETE WorkStep ws WHERE manufacturingOrder(ws) = o;
     FOR level(Bom b, bom(o)) ORDER level(b, bom(o)) DO NEW ws = WorkStep {
         name(ws) <- 'Этап: ' + name(b);
         manufacturingOrder(ws) <- o;
+        item(ws) <- item(b);
+        uom(ws) <- uom(b);
+        toProduce(ws) <- q;
+        locationResult(ws) <- locationResult(b); 
         createdStep(b) <- ws;
-        workStep(WorkOrder wo) <- ws WHERE bom(operation(wo)) = b AND manufacturingOrder(wo) = o; 
+        workStep(WorkOrder wo) <- ws WHERE bom(operation(wo)) = b AND manufacturingOrder(wo) = o;
+        sourceLine(ConsumedLine l) <- ws WHERE bom(componentLine(l)) = b AND manufacturingOrder(l) = o;
+
         IF parent(b, o) THEN {
             parent(ws) <- createdStep(parent(b, o));
         }
@@ -35,7 +66,9 @@ fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
 
 EXTEND FORM manufacturingOrder
     TREE workOrderOperation ws 'Производственные задания' = WorkStep PARENT parent(ws)
-    PROPERTIES (ws) name
+    PROPERTIES (ws) READONLY name
+    FILTERS manufacturingOrder(ws) = o
+    
     OBJECTS opt 'Операции' = WorkOrder
     PROPERTIES(opt) name, imagedNameStatus BACKGROUND colorStatus(opt), nameWorkCenter, startDate, startTime, duration, descriptionBom
     FILTERS workStep(opt) = ws

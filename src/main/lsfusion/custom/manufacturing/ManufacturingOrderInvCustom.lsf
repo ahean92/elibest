@@ -1,19 +1,48 @@
 MODULE ManufacturingOrderInvCustom;
 
-REQUIRE ManufacturingOrderInv, BomCustom;
+REQUIRE ManufacturingOrderInv, BomCustom, WorkOrderOperationCustom;
 
 NAMESPACE Manufacturing;
 
 locationSource = DATA Location (ConsumedLine);
-locationResult= DATA Location (FinishedLine);
+locationResult = DATA Location (ConsumedLine);
 
 fill(ConsumedLine cl, ComponentLine l) +{
     locationSource(cl) <- overLocationSource(l);
+    locationResult(cl) <- overLocationSource(l);
 }
 
-fill(FinishedLine fl, Bom b) +{
-    locationResult(fl) <- locationResult(b);
-}
+locationResult = ABSTRACT Location (ManufacturingOrderInvCustom);
+locationSource = ABSTRACT Location (ManufacturingOrderInvLedgerCustom);
 
-locationSource(ManufacturingOrderInvLedger l) = locationSource(line(l));
-locationResult(ManufacturingOrderInv l) += locationResult(line(l));
+CLASS ManufacturingOrderInvCustom : InvLedger;
+manILedger = AGGR ManufacturingOrderInvCustom WHERE done(WorkStep line) AND item(line) IS Product;
+
+type(ManufacturingOrderInvCustom l) += nameType(manufacturingOrder(line(l)));
+
+active(ManufacturingOrderInvCustom l) += active(line(l));
+dateTime(ManufacturingOrderInvCustom l) += executionDateTime(manufacturingOrder(line(l)));
+toLocation(ManufacturingOrderInvCustom l) += OVERRIDE locationResult(l), locationResult(line(l));
+
+product(ManufacturingOrderInvCustom l) += item(line(l)) AS Product;
+quantity(ManufacturingOrderInvCustom l) += toProduce(line(l));
+
+number(ManufacturingOrderInvCustom l) += number(manufacturingOrder(line(l)));
+
+edit (ManufacturingOrderInvCustom l) + { edit(manufacturingOrder(line(l))); }
+
+CLASS ManufacturingOrderInvLedgerCustom 'Consumed materials' : InvLedger;
+manInvLedger = AGGR ManufacturingOrderInvLedgerCustom WHERE done(WorkStep ws) AND sourceLine(ConsumedLine line) = ws AND NOT isFinishWorkStep(ws) AND item(line)  IS Product;
+
+type(ManufacturingOrderInvLedgerCustom l) += nameType(manufacturingOrder(line(l)));
+
+active(ManufacturingOrderInvLedgerCustom l) += active(ws(l));
+dateTime(ManufacturingOrderInvLedgerCustom l) += executionDateTime(manufacturingOrder(line(l)));
+fromLocation(ManufacturingOrderInvLedgerCustom l) += OVERRIDE locationSource(l), locationResult(line(l));
+
+product(ManufacturingOrderInvLedgerCustom l) += item(line(l)) AS Product;
+quantity(ManufacturingOrderInvLedgerCustom l) += consumed(line(l));
+
+number(ManufacturingOrderInvLedgerCustom l) += number(manufacturingOrder(line(l)));
+
+edit (ManufacturingOrderInvLedgerCustom l) + { edit(manufacturingOrder(line(l))); }

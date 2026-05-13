@@ -26,7 +26,7 @@ manInvLedger = AGGR ManufacturingOrderInvLedger WHERE consumed(ConsumedLine line
 
 type(ManufacturingOrderInvLedger l) += nameType(manufacturingOrder(line(l)));
 
-active(ManufacturingOrderInvLedger l) += active(manufacturingOrder(line(l)));
+//active(ManufacturingOrderInvLedger l) += active(manufacturingOrder(line(l)));
 dateTime(ManufacturingOrderInvLedger l) += executionDateTime(manufacturingOrder(line(l)));
 fromLocation(ManufacturingOrderInvLedger l) += OVERRIDE locationSource(l), materialsLocation(manufacturingOrder(line(l)));
 
