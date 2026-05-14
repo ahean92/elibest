@@ -77,8 +77,6 @@ EXTEND FORM manufacturingOrder
     OBJECTS opt 'Операции' = WorkOrder
     PROPERTIES(opt) name, imagedNameStatus BACKGROUND colorStatus(opt), nameWorkCenter, startDate, startTime, duration, descriptionBom
     FILTERS workStep(opt) = ws
-    
-    PROPERTIES '' = name(item(componentLine(c))), '' = name(sourceLine(c))
 ;
 
 
@@ -88,10 +86,9 @@ DESIGN manufacturingOrder {
         NEW workOperationsPane {
             fill = 1;
             horizontal = TRUE;
-            caption = 'Производственные задания'; 
+            caption = badged('Work orders', countWorkOrder(o));
             MOVE BOX(TREE workOrderOperation) {
                 fill = 1;
-                caption = badged('Work orders', countWorkOrder(o));
             }
             MOVE BOX(opt) {
                 fill = 2;

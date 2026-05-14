@@ -5,6 +5,8 @@ REQUIRE ManufacturingOrder, WorkOrderOperationCustom, ManufacturingOrderLot;
 NAMESPACE Manufacturing;
 
 number 'Number' = DATA STRING (Lot);
+manufacturingOrder 'Manufacturing order' = DATA ManufacturingOrder(Lot);
+
 // Перечисление доступных компонентов номера
 CLASS LotComponent 'Компонент номера партии' {
     date 'Дата изготовления',
@@ -46,10 +48,10 @@ DESIGN options {
 
 
 workCentersList (ManufacturingOrder o) =
-    GROUP CONCAT id(workCenter(WorkOrder wo)), ' '  ORDER startDate(wo) BY manufacturingOrder(wo);
+    GROUP CONCAT id(workCenter(WorkOrder wo)) IF done(wo), ' '  ORDER startDate(wo) BY manufacturingOrder(wo);
 
 executorsList (ManufacturingOrder o) =
-    GROUP CONCAT login(user(lastHistory(WorkOrder wo))), ' ' ORDER startDate(wo) BY manufacturingOrder(wo);
+    GROUP CONCAT login(user(lastHistory(WorkOrder wo))) IF done(wo), ' ' ORDER startDate(wo) BY manufacturingOrder(wo);
 
 // Вспомогательная функция для получения текстового значения компонента
 componentValue (LotComponent c, FinishedLine rl, STRING[48] currentNumerator) = CASE
@@ -80,7 +82,7 @@ generateLotCustom 'Generate' (FinishedLine rl) {
 
             id(l) <- CONCAT '', prefixLot(p), curNum(); 
             number(l) <- generatedNumber();             
-
+            manufacturingOrder(l) <- manufacturingOrder(rl);
             product(l) <- item(rl);
             toProduce(rl, l) <- IF useSerialNumbers(p) THEN 1 ELSE toProduceLotLeft(rl);
         }
@@ -89,10 +91,37 @@ generateLotCustom 'Generate' (FinishedLine rl) {
 
 EXTEND FORM manufacturingOrder
     PROPERTIES(l) generateLotCustom DRAW lotL TOOLBAR SHOWIF numeratorLot(item(l)) AND toProduceLotLeft(l) > 0
-    PROPERTIES (lotL) number BEFORE id(lotL)
+    PROPERTIES (lotL) READONLY number BEFORE id(lotL)
 ;
 
 
 DESIGN manufacturingOrder {
     REMOVE PROPERTY (generateLot(l));
+}
+
+EXTEND FORM lot
+    TREE workOrderOperation ws 'Производственные задания' = WorkStep PARENT parent(ws)
+    PROPERTIES (ws) READONLY name, quantity, done
+    FILTERS manufacturingOrder(ws) = manufacturingOrder(l) AND done(ws)
+
+    OBJECTS opt 'Операции' = WorkOrder
+    PROPERTIES(opt) READONLY name, imagedNameStatus BACKGROUND colorStatus(opt), nameWorkCenter, startDate, startTime, duration, descriptionBom
+    FILTERS workStep(opt) = ws
+;
+
+
+DESIGN lot {
+    tabs {
+        NEW workOperationsPane {
+            fill = 1;
+            horizontal = TRUE;
+            caption = 'Структура';
+            MOVE BOX(TREE workOrderOperation) {
+                fill = 1;
+            }
+            MOVE BOX(opt) {
+                fill = 2;
+            }
+        }
+    }
 }
