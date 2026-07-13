@@ -1,0 +1,60 @@
+MODULE WorkCenterTypeCustom;
+
+REQUIRE WorkCenter;
+
+NAMESPACE Manufacturing;
+
+CLASS WorkCenterType 'Тип рабочего центра';
+
+name 'Наименование' = DATA ISTRING[100] (WorkCenterType) NONULL CHARWIDTH 20 IN id;
+id 'ID' = DATA STRING[20] (WorkCenterType) CHARWIDTH 10 IN id;
+description 'Описание' = DATA ISTRING (WorkCenterType) CHARWIDTH 30;
+
+workCenterType (STRING[20] id) = GROUP AGGR WorkCenterType t BY id(t);
+
+workCenterType 'Тип рабочего центра' = DATA WorkCenterType (WorkCenter);
+nameWorkCenterType 'Тип рабочего центра' (WorkCenter w) = name(workCenterType(w));
+idWorkCenterType 'ID типа' (WorkCenter w) = id(workCenterType(w));
+
+EXTEND FORM workCenter
+    PROPERTIES(w) nameWorkCenterType
+;
+
+EXTEND FORM workCenters
+    PROPERTIES(w) READONLY nameWorkCenterType AFTER name(w)
+;
+
+FORM workCenterType 'Тип рабочего центра'
+    OBJECTS o = WorkCenterType PANEL
+    PROPERTIES(o) name, id, description
+
+    EDIT WorkCenterType OBJECT o
+;
+
+FORM workCenterTypes 'Типы рабочих центров'
+    OBJECTS o = WorkCenterType
+    PROPERTIES(o) READONLY id, name, description
+    PROPERTIES(o) NEWSESSION NEW, EDIT, DELETE
+
+    LIST WorkCenterType OBJECT o
+;
+
+EXTEND FORM options
+    OBJECTS wct = WorkCenterType
+    PROPERTIES(wct) READONLY id, name, description
+    PROPERTIES(wct) NEWSESSION NEW, EDIT, DELETE
+;
+
+DESIGN options {
+    tabbedPane {
+        MOVE BOX(wct) {
+            caption = 'Типы рабочих центров';
+        }
+    }
+}
+
+NAVIGATOR {
+    settings {
+        NEW workCenterTypes;
+    }
+}

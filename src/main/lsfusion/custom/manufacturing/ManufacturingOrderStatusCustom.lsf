@@ -1,0 +1,132 @@
+MODULE ManufacturingOrderStatusCustom;
+
+REQUIRE ManufacturingOrder, Color;
+
+NAMESPACE Manufacturing;
+
+CLASS CustomManufacturingOrderStatus 'Пользовательский статус';
+
+name 'Наименование' = DATA ISTRING[50] (CustomManufacturingOrderStatus) NONULL CHARWIDTH 15 IN id;
+id 'ID' = DATA STRING[20] (CustomManufacturingOrderStatus) IN id;
+customManufacturingOrderStatus (STRING[20] id) = GROUP AGGR CustomManufacturingOrderStatus s BY id(s);
+
+description 'Описание' = DATA ISTRING (CustomManufacturingOrderStatus) CHARWIDTH 30;
+
+sortingOrder 'Порядок' = DATA INTEGER (CustomManufacturingOrderStatus);
+index 'Индекс' (CustomManufacturingOrderStatus s) = PARTITION SUM 1 IF s IS CustomManufacturingOrderStatus ORDER sortingOrder(s), s;
+
+color 'Цвет' = DATA Color (CustomManufacturingOrderStatus);
+nameColor 'Цвет' (CustomManufacturingOrderStatus s) = name(color(s));
+rgbColor 'Цвет' (CustomManufacturingOrderStatus s) = rgb(color(s));
+
+closed 'Закрыт' = DATA BOOLEAN (CustomManufacturingOrderStatus);
+readonly 'Только чтение' = DATA BOOLEAN (CustomManufacturingOrderStatus);
+
+// Attach a custom status to a manufacturing order alongside the built-in system status
+customStatus 'Пользовательский статус' = DATA CustomManufacturingOrderStatus (ManufacturingOrder);
+nameCustomStatus 'Пользовательский статус' (ManufacturingOrder o) = name(customStatus(o));
+rgbCustomStatus 'Цвет' (ManufacturingOrder o) = rgbColor(customStatus(o));
+closedCustomStatus (ManufacturingOrder o) = closed(customStatus(o));
+readonlyCustomStatus (ManufacturingOrder o) = readonly(customStatus(o));
+
+// Make the order read-only when the assigned custom status is read-only
+readonly (ManufacturingOrder o) += WHEN readonlyCustomStatus(o) THEN TRUE;
+
+FORM customManufacturingOrderStatus 'Пользовательский статус'
+    OBJECTS s = CustomManufacturingOrderStatus PANEL
+    PROPERTIES(s) name, id, sortingOrder, nameColor, closed, readonly, description
+
+    EDIT CustomManufacturingOrderStatus OBJECT s
+;
+
+DESIGN customManufacturingOrderStatus {
+    OBJECTS {
+        NEW header {
+            horizontal = TRUE;
+            MOVE PROPERTY(name(s)) { charWidth = 30; }
+            MOVE PROPERTY(id(s));
+            MOVE PROPERTY(sortingOrder(s));
+        }
+        NEW pane {
+            horizontal = TRUE;
+            MOVE PROPERTY(nameColor(s));
+            MOVE PROPERTY(closed(s));
+            MOVE PROPERTY(readonly(s));
+        }
+        MOVE PROPERTY(description(s));
+    }
+}
+
+FORM customManufacturingOrderStatuses 'Пользовательские статусы производственных заданий'
+    OBJECTS s = CustomManufacturingOrderStatus
+    PROPERTIES(s) READONLY sortingOrder, name, id, nameColor, closed, readonly
+    PROPERTIES(s) NEWSESSION NEW, EDIT, DELETE
+    ORDERS sortingOrder(s), name(s)
+
+    LIST CustomManufacturingOrderStatus OBJECT s
+;
+
+FORM dialogCustomManufacturingOrderStatuses 'Выбор пользовательского статуса'
+    OBJECTS s = CustomManufacturingOrderStatus
+    PROPERTIES(s) READONLY sortingOrder, name, id, nameColor, closed, readonly
+    ORDERS sortingOrder(s), name(s)
+
+    LIST CustomManufacturingOrderStatus OBJECT s
+;
+
+changeCustomStatus 'Пользовательский статус' (ManufacturingOrder o) {
+    DIALOG dialogCustomManufacturingOrderStatuses OBJECTS s = customStatus(o) INPUT DO
+        customStatus(o) <- s;
+}
+
+resetCustomStatus 'Сбросить пользовательский статус' (ManufacturingOrder o) {
+    customStatus(o) <- NULL;
+}
+
+EXTEND FORM options
+    OBJECTS cms = CustomManufacturingOrderStatus
+    PROPERTIES(cms) READONLY sortingOrder, name, id, nameColor, closed, readonly
+    PROPERTIES(cms) NEWSESSION NEW, EDIT, DELETE
+    ORDERS sortingOrder(cms), name(cms)
+;
+
+DESIGN options {
+    tabbedPane {
+        MOVE BOX(cms) {
+            caption = 'Пользовательские статусы производственных заданий';
+        }
+    }
+}
+
+NAVIGATOR {
+    settings {
+        NEW customManufacturingOrderStatuses;
+    }
+}
+
+// Show custom status on the manufacturing order form (clickable, with color background)
+EXTEND FORM manufacturingOrder
+    PROPERTIES(o) READONLYIF readonly(o)
+                  nameCustomStatus BACKGROUND rgbCustomStatus(o) ON CHANGE changeCustomStatus(o),
+                  resetCustomStatus SHOWIF customStatus(o)
+;
+
+DESIGN manufacturingOrder {
+    status {
+        MOVE PROPERTY(nameCustomStatus(o));
+        MOVE PROPERTY(resetCustomStatus(o)) {
+            valueClass = 'btn-outline-secondary';
+        }
+    }
+}
+
+// list form: column + filter
+EXTEND FORM manufacturingOrders
+    PROPERTIES(o) READONLY nameCustomStatus BACKGROUND rgbCustomStatus(o) AFTER nameType(o)
+
+    FILTERGROUP customStatus
+        FILTER 'С польз. статусом' customStatus(o)
+        FILTER 'Без польз. статуса' NOT customStatus(o)
+;
+
+@defineHistoryProperty(manufacturingOrder, customStatus, 'Пользовательский статус', nameCustomStatus);
