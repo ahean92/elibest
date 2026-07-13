@@ -1,6 +1,6 @@
 MODULE OperationTypes;
 
-REQUIRE BomOperation;
+REQUIRE BomOperation, WorkCenterTypeCustom;
 
 NAMESPACE Manufacturing;
 
@@ -14,20 +14,65 @@ operationType (STRING[50] id) = GROUP AGGR OperationType o BY number(o);
 name 'Наименование' = DATA ISTRING[50] (OperationType) IN id;
 description 'Описание' (OperationType o) = badged(name(o), number(o)) IN id;
 
+// Overridable defaults for operations of this type
+defaultDuration 'Стандартная продолжительность' = DATA NUMERIC[8,2] (OperationType);
+defaultWorkCenterType 'Тип рабочего центра' = DATA WorkCenterType (OperationType);
+nameDefaultWorkCenterType 'Тип рабочего центра' (OperationType o) = name(defaultWorkCenterType(o));
+
 type = DATA OperationType(Operation);
 nameType 'Тип операции' (Operation o) = name(type(o));
 
+// prefill duration on operation from type when type is (re)assigned and duration not explicitly set
+WHEN LOCAL SETCHANGED(type(Operation o)) AND NOT CHANGED(duration(o)) AND defaultDuration(type(o)) DO
+    duration(o) <- defaultDuration(type(o));
+
+// derived preferred work center type for an operation (via its type)
+workCenterType 'Тип рабочего центра' (Operation o) = defaultWorkCenterType(type(o));
+nameWorkCenterTypeOperation 'Тип рабочего центра' (Operation o) = name(workCenterType(o));
+
+// clear inconsistent work center when the type mandates a different work center type
+WHEN LOCAL SETCHANGED(type(Operation o)) AND workCenterType(o)
+    AND workCenter(o) AND NOT workCenterType(workCenter(o)) = workCenterType(o) DO
+    workCenter(o) <- NULL;
+
+CONSTRAINT workCenter(Operation o) AND workCenterType(o)
+    AND NOT workCenterType(workCenter(o)) = workCenterType(o)
+    CHECKED BY workCenter[Operation]
+    MESSAGE 'Тип выбранного рабочего центра не соответствует типу операции';
+
+FORM operationType 'Тип операции'
+    OBJECTS o = OperationType PANEL
+    PROPERTIES(o) number, name, defaultDuration, nameDefaultWorkCenterType
+
+    EDIT OperationType OBJECT o
+;
+
+DESIGN operationType {
+    OBJECTS {
+        NEW header {
+            horizontal = TRUE;
+            MOVE PROPERTY(number(o));
+            MOVE PROPERTY(name(o)) { charWidth = 30; }
+        }
+        NEW defaults {
+            caption = 'Параметры по умолчанию';
+            MOVE PROPERTY(defaultDuration(o));
+            MOVE PROPERTY(nameDefaultWorkCenterType(o));
+        }
+    }
+}
+
 EXTEND FORM operation
-    PROPERTIES(o) nameType
+    PROPERTIES(o) nameType, nameWorkCenterTypeOperation READONLY
 ;
 
 EXTEND FORM operations
-    PROPERTIES(o) nameType FIRST 
-; 
+    PROPERTIES(o) nameType FIRST, nameWorkCenterTypeOperation READONLY
+;
 
 EXTEND FORM options
     OBJECTS opt = OperationType
-    PROPERTIES(opt) READONLY number, name
+    PROPERTIES(opt) READONLY number, name, defaultDuration, nameDefaultWorkCenterType
     PROPERTIES(opt) NEWSESSION NEW, EDIT, DELETE
 ;
 
@@ -38,6 +83,3 @@ DESIGN options {
         }
     }
 }
-
-
-
