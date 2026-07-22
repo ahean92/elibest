@@ -1,0 +1,92 @@
+MODULE WorkOrderStatusCustom;
+
+REQUIRE WorkOrderDone;
+
+NAMESPACE Manufacturing;
+
+// Динамический подкласс встроенного WorkOrderStatus. Экземпляры пользователь
+// заводит через настройки и попадают в то же поле status(WorkOrder).
+CLASS CustomWorkOrderStatus 'Пользовательский статус' : WorkOrderStatus;
+
+description 'Описание' = DATA ISTRING (CustomWorkOrderStatus) CHARWIDTH 30;
+
+customColor 'Цвет' = DATA COLOR (CustomWorkOrderStatus);
+
+// Подхватываем цвет в системный ABSTRACT color(WorkOrderStatus),
+// чтобы подсветка в imagedNameStatus BACKGROUND colorStatus работала одинаково.
+color (WorkOrderStatus s) += WHEN s IS CustomWorkOrderStatus
+                             THEN customColor(s AS CustomWorkOrderStatus);
+
+customStatus 'Пользовательский статус' = DATA CustomWorkOrderStatus (WorkOrder);
+nameCustomStatus 'Пользовательский статус' (WorkOrder o) = name(customStatus(o));
+status (WorkOrder w) += WHEN customStatus(w) THEN customStatus(w);
+
+// -------- Форма редактирования одного пользовательского статуса --------
+
+FORM customWorkOrderStatus 'Пользовательский статус'
+    OBJECTS s = CustomWorkOrderStatus PANEL
+    PROPERTIES(s) staticCaption, customColor, readonly, description
+
+    EDIT CustomWorkOrderStatus OBJECT s
+;
+
+DESIGN customWorkOrderStatus {
+    OBJECTS {
+        MOVE PROPERTY(staticCaption(s)) { caption = 'Наименование'; charWidth = 30; notNull = TRUE; }
+        MOVE PROPERTY(customColor(s));
+        MOVE PROPERTY(readonly(s));
+        MOVE PROPERTY(description(s));
+    }
+}
+
+// -------- Список для выбора статуса на форме WorkOrder --------
+
+FORM dialogCustomWorkOrderStatuses 'Выбор пользовательского статуса'
+    OBJECTS s = CustomWorkOrderStatus
+    PROPERTIES(s) READONLY staticCaption BACKGROUND customColor(s), readonly, description
+
+    LIST CustomWorkOrderStatus OBJECT s
+;
+
+// -------- Действия --------
+
+addCustomStatus 'Добавить' () {
+    NEWSESSION {
+        NEW s = CustomWorkOrderStatus {
+            SHOW customWorkOrderStatus OBJECTS s = s DOCKED;
+        }
+    }
+}
+
+deleteCustomStatus 'Удалить' (WorkOrderStatus s) {
+    IF s IS CustomWorkOrderStatus THEN {
+        NEWSESSION {
+            DELETE s;
+            APPLY;
+        }
+    }
+}
+
+selectCustomStatus 'Пользовательский статус' (WorkOrder o) {
+    DIALOG dialogCustomWorkOrderStatuses OBJECTS s = customStatus(o) INPUT DO
+        customStatus(o) <- s;
+}
+
+// -------- Настройки: кнопки в тулбаре списка WorkOrderStatus --------
+
+EXTEND FORM options
+    PROPERTIES addCustomStatus() DRAW workOrderst TOOLBAR
+    PROPERTIES(workOrderst) deleteCustomStatus TOOLBAR SHOWIF (workOrderst IS CustomWorkOrderStatus)
+;
+
+// -------- Поле-селектор пользовательского статуса на форме задания --------
+
+EXTEND FORM workOrder
+    PROPERTIES(o) nameCustomStatus ON CHANGE selectCustomStatus(o) BACKGROUND colorStatus(o)
+;
+
+DESIGN workOrder {
+    headerLeft {
+        MOVE PROPERTY(nameCustomStatus(o)) AFTER PROPERTY(nameWorkCenter(o));
+    }
+}
