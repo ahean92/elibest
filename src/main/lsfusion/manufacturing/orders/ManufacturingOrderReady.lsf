@@ -23,13 +23,13 @@ linesReserved (ManufacturingOrder m) = GROUP SUM 1 IF reserved(ConsumedLine l) =
 reserved (ManufacturingOrder m) = linesReserved(m) = countReservedLines(m);
 
 onHand 'On hand' (ConsumedLine l) =
-    prevOnHand(materialsLocation(manufacturingOrder(l)), item(l) AS Product);
+    prevOnHand(sourceLocation(l), item(l) AS Product);
 
 expected 'Expected' (ConsumedLine l) =
-    prevExpected(materialsLocation(manufacturingOrder(l)), item(l) AS Product);
+    prevExpected(sourceLocation(l), item(l) AS Product);
 
-available 'Available' (ConsumedLine l) = 
-    prevAvailable(materialsLocation(manufacturingOrder(l)), item(l) AS Product) (+) PREV(reserved(l));
+available 'Available' (ConsumedLine l) =
+    prevAvailable(sourceLocation(l), item(l) AS Product) (+) PREV(reserved(l));
 
 checkAvailability 'Check availability' (ManufacturingOrder m) {
     APPLY; 

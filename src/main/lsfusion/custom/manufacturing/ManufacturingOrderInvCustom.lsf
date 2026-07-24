@@ -4,9 +4,6 @@ REQUIRE ManufacturingOrderInv, BomCustom, WorkOrderOperationCustom;
 
 NAMESPACE Manufacturing;
 
-locationSource = DATA Location (ConsumedLine);
-locationResult = DATA Location (ConsumedLine);
-
 fill(ConsumedLine cl, ComponentLine l) +{
     locationSource(cl) <- overLocationSource(l);
     locationResult(cl) <- overLocationSource(l);
@@ -33,13 +30,22 @@ number(ManufacturingOrderInvCustom l) += number(manufacturingOrder(line(l)));
 edit (ManufacturingOrderInvCustom l) + { edit(manufacturingOrder(line(l))); }
 
 CLASS ManufacturingOrderInvLedgerCustom 'Consumed materials' : InvLedger;
-manInvLedger = AGGR ManufacturingOrderInvLedgerCustom WHERE done(WorkStep ws) AND sourceLine(ConsumedLine line) = ws AND NOT isFinishWorkStep(ws) AND item(line)  IS Product;
+manInvLedger = AGGR ManufacturingOrderInvLedgerCustom WHERE done(WorkStep ws) AND sourceLine(ConsumedLine line) = ws AND item(line) IS Product;
+
+// Заводим блокировку базовых ledger'ов для линий, обрабатываемых через WorkStep:
+// у ConsumedLine — по наличию sourceLine (WorkStep-потребителя),
+// у FinishedLine — по наличию WorkStep этого же товара в заказе.
+skipBaseLedger(ConsumedLine l) += TRUE IF sourceLine(l);
+
+hasWorkStepForItem (FinishedLine l) =
+    GROUP SUM 1 IF manufacturingOrder(WorkStep s) = manufacturingOrder(l) AND item(s) = item(l);
+skipBaseLedger(FinishedLine l) += TRUE IF hasWorkStepForItem(l);
 
 type(ManufacturingOrderInvLedgerCustom l) += nameType(manufacturingOrder(line(l)));
 
 active(ManufacturingOrderInvLedgerCustom l) += active(ws(l));
 dateTime(ManufacturingOrderInvLedgerCustom l) += executionDateTime(line(l));
-fromLocation(ManufacturingOrderInvLedgerCustom l) += OVERRIDE locationSource(l), locationResult(line(l));
+fromLocation(ManufacturingOrderInvLedgerCustom l) += OVERRIDE locationSource(l), sourceLocation(line(l));
 
 product(ManufacturingOrderInvLedgerCustom l) += item(line(l)) AS Product;
 quantity(ManufacturingOrderInvLedgerCustom l) += toConsume(line(l));
