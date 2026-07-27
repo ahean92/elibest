@@ -1,0 +1,28 @@
+MODULE WorkOrderResCustom;
+
+REQUIRE WorkOrderOperationCustom, ManufacturingOrderReady;
+
+NAMESPACE Manufacturing;
+
+countReservedLines (WorkOrder w) =
+    GROUP SUM 1 IF sourceLine(ConsumedLine l) = workStep(w) AND item(l) IS Product;
+linesReserved (WorkOrder w) =
+    GROUP SUM 1 IF sourceLine(ConsumedLine l) = workStep(w) AND item(l) IS Product
+                   AND reserved(l) = toConsume(l);
+reserved 'Резерв полный' (WorkOrder w) =
+    countReservedLines(w) AND linesReserved(w) = countReservedLines(w);
+
+// Автоматический резерв материалов/полуфабрикатов при запуске задания в работу.
+// К моменту inProgress нижние задания цепочки уже должны быть выполнены
+// (или полуфабрикат пришёл со склада / из параллельного заказа).
+WHEN SET(inProgress(WorkOrder w)) DO
+    reserved(ConsumedLine l) <- max(min(toConsume(l), available(l)), 0)
+        WHERE sourceLine(l) = workStep(w) AND item(l) IS Product;
+
+// Снятие резерва при завершении этапа (все WO на этапе done — материал уже списан).
+WHEN SET(done(WorkStep s)) DO
+    reserved(ConsumedLine l) <- NULL WHERE sourceLine(l) = s;
+
+// Блокировка запуска задания при нехватке материалов/полуфабрикатов.
+CONSTRAINT SET(inProgress(WorkOrder w)) AND countReservedLines(w) AND NOT reserved(w)
+    MESSAGE 'Недостаточно материалов или полуфабрикатов для запуска задания';
