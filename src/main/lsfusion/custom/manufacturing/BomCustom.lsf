@@ -16,9 +16,11 @@ nameLocationSource 'Место хранения источник' (ComponentLine
 overLocationSource (ComponentLine l) = OVERRIDE locationSource(l), locationSource(bom(l));
 nameOverLocationSource 'Место хранения источник' (ComponentLine l) = name(overLocationSource(l));
 
+// Этап по этой спецификации выпускает партию.
+useLot 'Формировать партии' = DATA BOOLEAN (Bom);
 
 EXTEND FORM bom
-    PROPERTIES (b) nameLocationResult, nameLocationSource
+    PROPERTIES (b) nameLocationResult, nameLocationSource, useLot
     PROPERTIES (c) nameOverLocationSource
 ;
 
@@ -27,6 +29,7 @@ DESIGN bom{
         NEW locations{
             MOVE PROPERTY (nameLocationResult(b));
             MOVE PROPERTY (nameLocationSource(b));
+            MOVE PROPERTY (useLot(b));
         }
     }
 }

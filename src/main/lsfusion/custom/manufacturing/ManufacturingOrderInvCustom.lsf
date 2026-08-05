@@ -23,7 +23,7 @@ dateTime(ManufacturingOrderInvCustom l) += executionDateTime(line(l));
 toLocation(ManufacturingOrderInvCustom l) += OVERRIDE locationResult(l), locationResult(line(l));
 
 product(ManufacturingOrderInvCustom l) += item(line(l)) AS Product;
-quantity(ManufacturingOrderInvCustom l) += quantity(line(l));
+quantity(ManufacturingOrderInvCustom l) += producedQuantity(line(l));
 
 number(ManufacturingOrderInvCustom l) += number(manufacturingOrder(line(l)));
 
@@ -32,9 +32,7 @@ edit (ManufacturingOrderInvCustom l) + { edit(manufacturingOrder(line(l))); }
 CLASS ManufacturingOrderInvLedgerCustom 'Consumed materials' : InvLedger;
 manInvLedger = AGGR ManufacturingOrderInvLedgerCustom WHERE done(WorkStep ws) AND sourceLine(ConsumedLine line) = ws AND item(line) IS Product;
 
-// Заводим блокировку базовых ledger'ов для линий, обрабатываемых через WorkStep:
-// у ConsumedLine — по наличию sourceLine (WorkStep-потребителя),
-// у FinishedLine — по наличию WorkStep этого же товара в заказе.
+// Строки, обрабатываемые через WorkStep, базовыми ledger'ами не проводим.
 skipBaseLedger(ConsumedLine l) += TRUE IF sourceLine(l);
 
 hasWorkStepForItem (FinishedLine l) =
@@ -64,7 +62,8 @@ dateTime(ManufacturingOrderInvLedgerIntermediate l) += executionDateTime(line(l)
 fromLocation(ManufacturingOrderInvLedgerIntermediate l) += OVERRIDE locationSource(l), locationResult(line(l));
 
 product(ManufacturingOrderInvLedgerIntermediate l) += item(line(l)) AS Product;
-quantity(ManufacturingOrderInvLedgerIntermediate l) += quantity(line(l));
+// Ровно то, что оприходовали этим этапом — иначе при частичном выпуске уйдёт в минус.
+quantity(ManufacturingOrderInvLedgerIntermediate l) += producedQuantity(line(l));
 
 number(ManufacturingOrderInvLedgerIntermediate l) += number(manufacturingOrder(line(l)));
 

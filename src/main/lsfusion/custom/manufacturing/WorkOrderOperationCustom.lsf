@@ -33,6 +33,9 @@ WHEN LOCAL CHANGED(item(WorkStep l)) DO uom(l) <- uom(item(l));
 toProduce '{Manufacture}' = DATA NUMERIC[16,3] (WorkStep);
 locationResult = DATA Location (WorkStep);
 
+// Снимок со спецификации: правка спецификации не меняет запущенные заказы.
+useLot 'Формировать партии' = DATA BOOLEAN (WorkStep);
+
 componentLine = DATA ComponentLine(ConsumedLine);
 
 done 'Выполнен' (WorkStep s) = NOT GROUP SUM 1 IF workStep(WorkOrder o) = s AND NOT done(o);
@@ -46,6 +49,13 @@ fill(ConsumedLine cl, ComponentLine l) +{
 isFinishWorkStep(WorkStep s) = GROUP SUM 1 IF item(s) = item(manufacturingOrder(s));
 executionDateTime 'Execution date' = DATA DATETIME (WorkStep);
 quantity 'Кол-во' = DATA NUMERIC[16,3] (WorkStep);
+
+// Фактический выпуск этапа. Пусто — значит вышло по плану.
+produced 'Произведено' = DATA NUMERIC[16,3] (WorkStep);
+producedQuantity 'Произведено' (WorkStep s) = OVERRIDE produced(s), quantity(s);
+
+CONSTRAINT produced(WorkStep s) > quantity(s)
+    MESSAGE 'Произведено больше, чем запланировано на этапе производства';
 componentLine(Bom b, ManufacturingOrder o) = GROUP MAX ComponentLine cl IF nestedBom(cl) = b AND level(bom(cl), bom(o));
  
 WHEN SET(done(WorkStep o)) AND NOT CHANGED(executionDateTime(o)) DO executionDateTime(o) <- currentDateTime();
@@ -60,6 +70,7 @@ fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
         toProduce(ws) <- q;
         locationResult(ws) <- locationResult(b); 
         createdStep(b) <- ws;
+        useLot(ws) <- useLot(b);
         workStep(WorkOrder wo) <- ws WHERE bom(operation(wo)) = b AND manufacturingOrder(wo) = o;
         sourceLine(ConsumedLine l) <- ws WHERE bom(componentLine(l)) = b AND manufacturingOrder(l) = o;
         IF parent(b, o) THEN {
@@ -72,10 +83,11 @@ fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
 EXTEND FORM manufacturingOrder
     TREE workOrderOperation ws 'Производственные задания' = WorkStep PARENT parent(ws)
     PROPERTIES (ws) READONLY name, quantity, done
+    PROPERTIES (ws) produced
     FILTERS manufacturingOrder(ws) = o
-    
+
     OBJECTS opt 'Операции' = WorkOrder
-    PROPERTIES(opt) name, imagedNameStatus BACKGROUND colorStatus(opt), nameWorkCenter, startDate, startTime, duration, descriptionBom
+    PROPERTIES(opt) READONLY name, imagedNameStatus BACKGROUND colorStatus(opt), nameWorkCenter, startDate, startTime, duration, descriptionBom
     FILTERS workStep(opt) = ws
 ;
 

@@ -1,6 +1,6 @@
 MODULE ManufacturingOrderLotCustom;
 
-REQUIRE ManufacturingOrder, WorkOrderOperationCustom, ManufacturingOrderLot;
+REQUIRE ManufacturingOrder, WorkOrderOperationCustom, ManufacturingOrderLot, ManufacturingOrderInvCustom, ManufacturingOrderLotPrint;
 
 NAMESPACE Manufacturing;
 
@@ -54,50 +54,101 @@ executorsList (ManufacturingOrder o) =
     GROUP CONCAT login(user(lastHistory(WorkOrder wo))) IF done(wo), ' ' ORDER startDate(wo) BY manufacturingOrder(wo);
 
 // Вспомогательная функция для получения текстового значения компонента
-componentValue (LotComponent c, FinishedLine rl, STRING[48] currentNumerator) = CASE
+componentValue (LotComponent c, WorkStep ws, STRING[48] currentNumerator) = CASE
     WHEN c == LotComponent.date THEN STRING (currentDate())
     WHEN c == LotComponent.numerator THEN currentNumerator
-    WHEN c == LotComponent.orderNumber THEN OVERRIDE number(manufacturingOrder(rl)), 'NO_ORDER'
-    WHEN c == LotComponent.workCenters THEN OVERRIDE workCentersList(manufacturingOrder(rl)), 'NO_WC'
-    WHEN c == LotComponent.executors THEN OVERRIDE executorsList(manufacturingOrder(rl)), 'NO_EMP'
+    WHEN c == LotComponent.orderNumber THEN OVERRIDE number(manufacturingOrder(ws)), 'NO_ORDER'
+    WHEN c == LotComponent.workCenters THEN OVERRIDE workCentersList(manufacturingOrder(ws)), 'NO_WC'
+    WHEN c == LotComponent.executors THEN OVERRIDE executorsList(manufacturingOrder(ws)), 'NO_EMP'
 ;
 
-// Переопределенное действие генерации
-generateLotCustom 'Generate' (FinishedLine rl) {
-    FOR Product p = item(rl) DO {
-        FOR iterate(INTEGER i, 1, IF useSerialNumbers(p) THEN toProduceLotLeft(rl) ELSE 1) DO NEW l = Lot  {
-            
+// Партии на этапе, а не на строке выпуска — покрывает и готовую продукцию, и полуфабрикаты.
+produced 'Произведено' = DATA NUMERIC[16,3] (WorkStep, Lot);
+
+producedLot 'Кол-во по партиям' (WorkStep ws) = GROUP SUM produced(ws, Lot l);
+producedLotLeft 'Осталось распределить' (WorkStep ws) = producedQuantity(ws) - OVERRIDE producedLot(ws), 0;
+
+lotsProduced 'Партии' (WorkStep ws) =
+    GROUP CONCAT
+        (CONCAT '', id(Lot l) IF produced(ws, l), '(' + (STRING(DOUBLE(produced(ws, l))) IF (produced(ws, l) != 1)) + ')'),
+        ',' ORDER l CHARWIDTH 15;
+
+CONSTRAINT produced(WorkStep ws, Lot l) AND item(ws) != product(l)
+    MESSAGE 'Товар этапа производства не совпадает с товаром партии';
+
+CONSTRAINT producedLot(WorkStep ws) > producedQuantity(ws)
+    MESSAGE 'Количество по партиям больше произведённого на этапе производства';
+
+// Действие генерации
+generateLotCustom 'Сформировать партию' (WorkStep ws) {
+    FOR Product p = item(ws) DO {
+        FOR iterate(INTEGER i, 1, IF useSerialNumbers(p) THEN producedLotLeft(ws) ELSE 1) DO NEW l = Lot  {
+
             incrementValue(numeratorLot(p));
             LOCAL curNum = STRING[48]();
             curNum() <- incrementedValue();
-            
+
             LOCAL generatedNumber = STRING();
 
             FOR order(LotStructure ls) DO {
                 LOCAL val = STRING();
-                val() <- componentValue(component(ls), rl, curNum());
+                val() <- componentValue(component(ls), ws, curNum());
 
-                generatedNumber() <- CONCAT lotSeparator(), generatedNumber(), val();
+                // Пустой разделитель без OVERRIDE обнулил бы весь CONCAT.
+                generatedNumber() <- CONCAT (OVERRIDE lotSeparator(), ''), generatedNumber(), val();
             }
 
-            id(l) <- CONCAT '', prefixLot(p), curNum(); 
-            number(l) <- generatedNumber();             
-            manufacturingOrder(l) <- manufacturingOrder(rl);
-            product(l) <- item(rl);
-            toProduce(rl, l) <- IF useSerialNumbers(p) THEN 1 ELSE toProduceLotLeft(rl);
+            id(l) <- CONCAT '', prefixLot(p), curNum();
+            number(l) <- generatedNumber();
+            manufacturingOrder(l) <- manufacturingOrder(ws);
+            product(l) <- item(ws);
+            produced(ws, l) <- IF useSerialNumbers(p) THEN 1 ELSE producedLotLeft(ws);
         }
     }
 }
 
+// Стикер на каждую единицу произведённого.
+printLotStep '{Label}' (WorkStep ws) {
+    count(Item i) <- 1 IF item(ws) = i;
+    count(Lot l) <- INTEGER(produced(ws, l));
+    printLot();
+}
+
 EXTEND FORM manufacturingOrder
-    PROPERTIES(l) generateLotCustom DRAW lotL TOOLBAR SHOWIF numeratorLot(item(l)) AND toProduceLotLeft(l) > 0
-    PROPERTIES (lotL) READONLY number BEFORE id(lotL)
+    PROPERTIES (ws) READONLY lotsProduced
+
+    OBJECTS lotWS = Lot
+    PROPERTIES (lotWS) READONLY number, id
+    PROPERTIES (ws, lotWS) produced
+    PROPERTIES (lotWS) EDIT, DELETE GRID
+    FILTERS produced(ws, lotWS)
+
+    // Только по выполненному этапу: до этого в номер уедет NO_WC/NO_EMP.
+    PROPERTIES (ws) generateLotCustom TOOLBAR DRAW lotWS
+                        SHOWIF done(ws) AND useLot(ws) AND numeratorLot(item(ws)) AND producedLotLeft(ws) > 0,
+                    printLotStep TOOLBAR DRAW lotWS
+                        SHOWIF countPrintType(item(ws)) AND producedLot(ws)
 ;
 
 
 DESIGN manufacturingOrder {
-    REMOVE PROPERTY (generateLot(l));
+    // Партии ведутся по этапам — старый грид по строкам выпуска убираем.
+    REMOVE PROPERTY(generateLot(l));
+    REMOVE BOX(lotL);
+
+    workOperationsPane {
+        MOVE BOX(lotWS) {
+            caption = 'Партии';
+            fill = 1;
+        }
+    }
 }
+
+// Приход полуфабриката / готовой продукции в разрезе партий
+quantity(ManufacturingOrderInvCustom i, Lot l) += produced(line(i), l);
+// Списание полуфабриката — теми же партиями, которыми он был оприходован
+quantity(ManufacturingOrderInvLedgerIntermediate i, Lot l) += produced(line(i), l);
+
 
 EXTEND FORM lot
     TREE workOrderOperation ws 'Производственные задания' = WorkStep PARENT parent(ws)
