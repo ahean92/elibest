@@ -19,10 +19,29 @@ WHEN SET(inProgress(WorkOrder w)) DO
     reserved(ConsumedLine l) <- max(min(toConsume(l), available(l)), 0)
         WHERE sourceLine(l) = workStep(w) AND item(l) IS Product;
 
-// Снятие резерва при завершении этапа (все WO на этапе done — материал уже списан).
-WHEN SET(done(WorkStep s)) DO
-    reserved(ConsumedLine l) <- NULL WHERE sourceLine(l) = s;
+// Материал этапа списан — резерв по его строкам не держим и не даём поставить заново.
+WHEN done(sourceLine(ConsumedLine l)) AND reserved(l) DO
+    reserved(l) <- NULL;
+
+// Строки, материал которых ещё не списан этапом.
+toReserve (ManufacturingOrder o) =
+    GROUP SUM 1 IF manufacturingOrder(ConsumedLine l) = o AND NOT done(sourceLine(l));
 
 // Блокировка запуска задания при нехватке материалов/полуфабрикатов.
 CONSTRAINT SET(inProgress(WorkOrder w)) AND countReservedLines(w) AND NOT reserved(w)
     MESSAGE 'Недостаточно материалов или полуфабрикатов для запуска задания';
+
+// После выполнения этапов резерв снят, и базовая кнопка возвращается, предлагая
+// зарезервировать уже списанное. Показываем, только пока есть что резервировать.
+EXTEND FORM manufacturingOrder
+    PROPERTIES(o) checkAvailabilityLeft = checkAvailability
+        SHOWIF (status(o) = ManufacturingOrderStatus.waiting OR status(o) = ManufacturingOrderStatus.ready)
+               AND NOT reserved(o) AND toReserve(o)
+;
+
+DESIGN manufacturingOrder {
+    REMOVE PROPERTY(checkAvailability(o));
+    primaryActions {
+        MOVE PROPERTY(checkAvailabilityLeft) { valueClass = 'btn-primary'; }
+    }
+}

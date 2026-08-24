@@ -13,8 +13,11 @@ locationResult = ABSTRACT Location (ManufacturingOrderInvCustom);
 locationSource = ABSTRACT Location (ManufacturingOrderInvLedgerCustom);
 locationSource = ABSTRACT Location (ManufacturingOrderInvLedgerIntermediate);
 
+// Родитель берёт полуфабрикат со склада строкой потребления — этап его не выпускает.
+fromStock (WorkStep s) = GROUP SUM 1 IF sourceLine(ConsumedLine l) = parent(s) AND item(l) = item(s);
+
 CLASS ManufacturingOrderInvCustom 'Оприходывание полуфабриката' : InvLedger;
-manILedger = AGGR ManufacturingOrderInvCustom WHERE done(WorkStep line) AND item(line) IS Product;
+manILedger = AGGR ManufacturingOrderInvCustom WHERE done(WorkStep line) AND item(line) IS Product AND NOT fromStock(line);
 
 type(ManufacturingOrderInvCustom l) += nameType(manufacturingOrder(line(l)));
 
@@ -53,7 +56,7 @@ number(ManufacturingOrderInvLedgerCustom l) += number(manufacturingOrder(line(l)
 edit (ManufacturingOrderInvLedgerCustom l) + { edit(manufacturingOrder(line(l))); }
 
 CLASS ManufacturingOrderInvLedgerIntermediate 'Списание полуфабриката' : InvLedger;
-manInvLedger = AGGR ManufacturingOrderInvLedgerIntermediate WHERE done(WorkStep ws) AND parent(WorkStep line) = ws AND item(line) IS Product;
+manInvLedger = AGGR ManufacturingOrderInvLedgerIntermediate WHERE done(WorkStep ws) AND parent(WorkStep line) = ws AND item(line) IS Product AND NOT fromStock(line);
 
 type(ManufacturingOrderInvLedgerIntermediate l) += nameType(manufacturingOrder(line(l)));
 
