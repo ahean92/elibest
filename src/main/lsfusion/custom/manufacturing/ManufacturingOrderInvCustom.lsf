@@ -16,6 +16,10 @@ locationSource = ABSTRACT Location (ManufacturingOrderInvLedgerIntermediate);
 // Родитель берёт полуфабрикат со склада строкой потребления — этап его не выпускает.
 fromStock (WorkStep s) = GROUP SUM 1 IF sourceLine(ConsumedLine l) = parent(s) AND item(l) = item(s);
 
+// Иначе этап и выпускает полуфабрикат, и берёт его со склада — двойное списание.
+CONSTRAINT fromStock(WorkStep s) AND hasWorkOrder(s)
+    MESSAGE 'Этап производства выпускает полуфабрикат и одновременно берёт его со склада. Снимите операции со спецификации или включите на ней «Промежуточная спецификация»';
+
 CLASS ManufacturingOrderInvCustom 'Оприходывание полуфабриката' : InvLedger;
 manILedger = AGGR ManufacturingOrderInvCustom WHERE done(WorkStep line) AND item(line) IS Product AND NOT fromStock(line);
 
@@ -45,7 +49,8 @@ skipBaseLedger(FinishedLine l) += TRUE IF hasWorkStepForItem(l);
 type(ManufacturingOrderInvLedgerCustom l) += nameType(manufacturingOrder(line(l)));
 
 active(ManufacturingOrderInvLedgerCustom l) += active(ws(l));
-dateTime(ManufacturingOrderInvLedgerCustom l) += executionDateTime(line(l));
+// Материал списывается при выполнении этапа, а не при закрытии заказа.
+dateTime(ManufacturingOrderInvLedgerCustom l) += OVERRIDE executionDateTime(sourceLine(line(l))), executionDateTime(line(l));
 fromLocation(ManufacturingOrderInvLedgerCustom l) += OVERRIDE locationSource(l), sourceLocation(line(l));
 
 product(ManufacturingOrderInvLedgerCustom l) += item(line(l)) AS Product;
@@ -61,7 +66,9 @@ manInvLedger = AGGR ManufacturingOrderInvLedgerIntermediate WHERE done(WorkStep 
 type(ManufacturingOrderInvLedgerIntermediate l) += nameType(manufacturingOrder(line(l)));
 
 active(ManufacturingOrderInvLedgerIntermediate l) += active(ws(l));
-dateTime(ManufacturingOrderInvLedgerIntermediate l) += executionDateTime(line(l));
+// Родитель потребляет полуфабрикат при своём выполнении, а не при выпуске потомка:
+// иначе буфер между этапами не виден в отчёте на дату.
+dateTime(ManufacturingOrderInvLedgerIntermediate l) += OVERRIDE executionDateTime(ws(l)), executionDateTime(line(l));
 fromLocation(ManufacturingOrderInvLedgerIntermediate l) += OVERRIDE locationSource(l), locationResult(line(l));
 
 product(ManufacturingOrderInvLedgerIntermediate l) += item(line(l)) AS Product;

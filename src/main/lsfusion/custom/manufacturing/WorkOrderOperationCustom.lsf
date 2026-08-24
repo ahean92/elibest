@@ -38,6 +38,7 @@ useLot 'Формировать партии' = DATA BOOLEAN (WorkStep);
 
 componentLine = DATA ComponentLine(ConsumedLine);
 
+hasWorkOrder (WorkStep s) = GROUP SUM 1 IF workStep(WorkOrder o) = s;
 done 'Выполнен' (WorkStep s) = NOT GROUP SUM 1 IF workStep(WorkOrder o) = s AND NOT done(o);
 canceled 'Canceled' = DATA BOOLEAN (WorkStep);
 active '{Active}' (WorkStep o) = done(o) AND NOT canceled(o);
@@ -59,6 +60,12 @@ CONSTRAINT produced(WorkStep s) > quantity(s)
 componentLine(Bom b, ManufacturingOrder o) = GROUP MAX ComponentLine cl IF nestedBom(cl) = b AND level(bom(cl), bom(o));
  
 WHEN SET(done(WorkStep o)) AND NOT CHANGED(executionDateTime(o)) DO executionDateTime(o) <- currentDateTime();
+
+// Этап без операций выполнен с момента создания: SET(done) не наступает, и проводки
+// от него ушли бы в регистр без даты, а значит мимо отчётов за период. Берём дату
+// заказа, а не текущую, чтобы движение не зависело от момента пересчёта.
+WHEN done(WorkStep o) AND NOT hasWorkOrder(o) AND NOT executionDateTime(o) DO
+    executionDateTime(o) <- scheduledDateTime(manufacturingOrder(o));
 
 fillByQuantity (ManufacturingOrder o, NUMERIC[16,3] q) + {
     DELETE WorkStep ws WHERE manufacturingOrder(ws) = o;
