@@ -1,0 +1,53 @@
+MODULE WorkOrderDateCustom;
+
+REQUIRE ManufacturingOrderCancelCustom;
+
+NAMESPACE Manufacturing;
+
+// Дата задания ставилась один раз, при привязке к заказу, и дальше жила сама по себе:
+// заказ переносили, а задания оставались на старой дате — вместе с загрузкой рабочих
+// центров и фильтром списка заданий, которые считаются именно по дате задания.
+
+notStarted (WorkOrder w) = w IS WorkOrder AND NOT inProgress(w) AND NOT done(w) AND NOT canceled(w);
+
+// Двигаем только те, что стояли на прежней дате заказа: вручную разложенные по
+// календарю загрузки и перенесённые при клонировании остаются на своих местах.
+WHEN CHANGED(scheduledDateTime(ManufacturingOrder o)) DO
+    startDate(WorkOrder w) <- scheduledDate(o)
+        WHERE manufacturingOrder(w) = o AND notStarted(w)
+              AND startDate(w) = DATE(PREV(scheduledDateTime(o)));
+
+// Начатые задания молча не переносим — это уже факт. Показываем расхождение.
+dateDiffers 'Дата не совпадает с заказом' (WorkOrder w) =
+    w IS WorkOrder AND scheduledDate(manufacturingOrder(w)) AND NOT closed(w)
+    AND NOT startDate(w) = scheduledDate(manufacturingOrder(w));
+
+background(WorkOrder w) += WHEN dateDiffers(w) THEN RGB(255,224,224);
+
+countDateDiffers (ManufacturingOrder o) = GROUP SUM 1 IF manufacturingOrder(WorkOrder w) = o AND dateDiffers(w);
+// Задания из календаря загрузки создаются без имени — иначе строка схлопнется в NULL.
+listDateDiffers (ManufacturingOrder o) = GROUP CONCAT
+    (OVERRIDE name(WorkOrder w), nameWorkCenter(w), 'б/н')
+    IF manufacturingOrder(w) = o AND dateDiffers(w), ', ' ORDER name(w), w;
+
+moveWorkOrderDates 'Перенести задания на дату заказа' (ManufacturingOrder o) {
+    APPLY;
+    IF canceled() THEN RETURN;
+
+    ASK (CONCAT '', 'Перенести на дату заказа задания: ', listDateDiffers(o), '?') DO {
+        NEWSESSION {
+            startDate(WorkOrder w) <- scheduledDate(o) WHERE manufacturingOrder(w) = o AND dateDiffers(w);
+            APPLY;
+        }
+    }
+}
+
+EXTEND FORM manufacturingOrder
+    PROPERTIES(o) moveWorkOrderDates SHOWIF countDateDiffers(o)
+;
+
+DESIGN manufacturingOrder {
+    secondaryActions {
+        MOVE PROPERTY(moveWorkOrderDates(o)) { valueClass = 'btn-warning'; }
+    }
+}

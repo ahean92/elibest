@@ -23,7 +23,9 @@ workCenter 'Work center' = DATA WorkCenter (WorkOrder) NONULL;
 nameWorkCenter 'Work center' (WorkOrder w) = name(workCenter(w));
 
 startDate 'Start date' = DATA DATE (WorkOrder);
-startDate(WorkOrder w) <- scheduledDate(manufacturingOrder(w)) WHEN SET(manufacturingOrder(w));
+// Дату, проставленную явно (клонирование, ячейка календаря загрузки), не перетираем.
+WHEN SET(manufacturingOrder(WorkOrder w)) AND NOT CHANGED(startDate(w)) DO
+    startDate(w) <- scheduledDate(manufacturingOrder(w));
 
 startTime 'Start time' = DATA TIME (WorkOrder);
 duration 'Duration' = DATA NUMERIC[8,2] (WorkOrder);

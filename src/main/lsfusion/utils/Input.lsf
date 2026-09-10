@@ -5,7 +5,8 @@ REQUIRE SystemEvents;
 NAMESPACE Utils;
 
 FORM dialogQuantity 'Quantity input'
-    OBJECTS q = NUMERIC[16,2] PANEL
+    // Точность как у количества в складском контуре: [16,2] округляла ввод до сотых.
+    OBJECTS q = NUMERIC[16,3] PANEL
     PROPERTIES(q) quantity 'Enter quantity:' = VALUE
 ;
 

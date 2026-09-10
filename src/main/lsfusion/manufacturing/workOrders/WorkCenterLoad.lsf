@@ -4,8 +4,11 @@ REQUIRE WorkOrder, DateUtils;
 
 NAMESPACE Manufacturing;
 
-duration 'Duration' (DATE d, WorkCenter c) = 
-    GROUP SUM duration(WorkOrder w) IF startDate(w) = d AND workCenter(w) = c;
+// Точка расширения: задание не учитывается в загрузке рабочего центра.
+skipLoad = ABSTRACT BOOLEAN (WorkOrder);
+
+duration 'Duration' (DATE d, WorkCenter c) =
+    GROUP SUM duration(WorkOrder w) IF startDate(w) = d AND workCenter(w) = c AND NOT skipLoad(w);
 
 loadManufacturingOrder = DATA LOCAL ManufacturingOrder ();
 numberDateLoadManufacturingOrder 'Manufacturing order' () = numberDate(loadManufacturingOrder());

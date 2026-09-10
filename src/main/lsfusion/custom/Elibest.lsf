@@ -16,4 +16,4 @@ REQUIRE Eval, ProcessMonitor, Backup, Chat, Documentation,
 
 
         OperationTypes, WorkOrderOperationCustom, ManufacturingOrderInvCustom, ManufacturingOrderLotCustom,
-        WorkOrderStatusCustom, WorkOrderResCustom;
+        WorkOrderStatusCustom, WorkOrderResCustom, ManufacturingOrderCancelCustom, WorkOrderDateCustom;

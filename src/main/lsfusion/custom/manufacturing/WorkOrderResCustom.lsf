@@ -1,6 +1,6 @@
 MODULE WorkOrderResCustom;
 
-REQUIRE WorkOrderOperationCustom, ManufacturingOrderReady;
+REQUIRE WorkOrderOperationCustom, ManufacturingOrderReady, NumericUtils;
 
 NAMESPACE Manufacturing;
 
@@ -23,25 +23,77 @@ WHEN SET(inProgress(WorkOrder w)) DO
 WHEN done(sourceLine(ConsumedLine l)) AND reserved(l) DO
     reserved(l) <- NULL;
 
-// Строки, материал которых ещё не списан этапом.
+// Строки, по которым резерв ещё нужен: материал не списан этапом и зарезервирован не полностью.
 toReserve (ManufacturingOrder o) =
-    GROUP SUM 1 IF manufacturingOrder(ConsumedLine l) = o AND NOT done(sourceLine(l));
+    GROUP SUM 1 IF manufacturingOrder(ConsumedLine l) = o AND NOT done(sourceLine(l))
+                   AND NOT reserved(l) = toConsume(l);
 
-// Блокировка запуска задания при нехватке материалов/полуфабрикатов.
+// Блокировка запуска задания при нехватке материалов.
 CONSTRAINT SET(inProgress(WorkOrder w)) AND countReservedLines(w) AND NOT reserved(w)
-    MESSAGE 'Недостаточно материалов или полуфабрикатов для запуска задания';
+    MESSAGE 'Недостаточно материалов для запуска задания';
+
+// Полуфабрикат может приходить не строкой потребления со склада, а от нижнего этапа.
+// Собственных строк потребления у такого этапа нет, и обеспеченность определяется
+// выполненностью потомков — без этого предыдущая проверка не срабатывает вовсе.
+// Отменённый этап пропущен намеренно и родителя не держит.
+notDoneChildren (WorkStep s) = GROUP SUM 1 IF parent(WorkStep c) = s AND NOT done(c) AND NOT canceled(c);
+
+// Для разборки дерево этапов идёт в обратную сторону, порядок не проверяем.
+notInOrder (WorkOrder w) = notDoneChildren(workStep(w)) AND NOT unbuild(manufacturingOrder(w));
+
+CONSTRAINT SET(inProgress(WorkOrder w)) AND notInOrder(w)
+    MESSAGE 'Не выполнены предшествующие этапы: полуфабрикат для задания ещё не произведён';
+
+// Галку «Выполнено» можно поставить, минуя запуск, — порядок проверяем и здесь.
+CONSTRAINT SET(done(WorkOrder w)) AND notInOrder(w)
+    MESSAGE 'Не выполнены предшествующие этапы: полуфабрикат для задания ещё не произведён';
+
+// Колонка в материалах: чего не хватает на складе источника прямо сейчас.
+// По списанным этапом строкам не считаем — материал уже ушёл в производство.
+shortage 'Не хватает' (ConsumedLine l) =
+    (max(toConsume(l) (-) available(l), 0) IF NOT done(sourceLine(l)));
+
+// Для сообщения: считаем по факту резерва, а не по остатку.
+notReserved (ConsumedLine l) =
+    (max(toConsume(l) (-) reserved(l), 0) IF NOT done(sourceLine(l)));
+
+shortageList (ManufacturingOrder o) = GROUP CONCAT
+    (nameItem(ConsumedLine l) + ': требуется ' + trimScale(toConsume(l))
+        + ', доступно ' + trimScale(toConsume(l) (-) notReserved(l))
+        + ', не хватает ' + trimScale(notReserved(l)))
+    IF manufacturingOrder(l) = o AND notReserved(l) > 0, '\n' ORDER nameItem(l), l;
+
+// Базовое действие ставит частичный резерв молча. Тело повторяет checkAvailability,
+// чтобы собрать перечень дефицита в той же сессии, где ставился резерв.
+checkAvailabilityLeft 'Check availability' (ManufacturingOrder o) {
+    APPLY;
+    IF canceled() THEN RETURN;
+
+    NEWSESSION {
+        reserved(ConsumedLine l) <- max(min(toConsume(l), available(l)), 0) WHERE manufacturingOrder(l) = o;
+
+        IF reserved(o) THEN
+            ready(o) <- TRUE;
+        APPLY;
+
+        IF shortageList(o) THEN
+            MESSAGE 'Не хватает материалов:\n' + shortageList(o);
+    }
+}
 
 // После выполнения этапов резерв снят, и базовая кнопка возвращается, предлагая
 // зарезервировать уже списанное. Показываем, только пока есть что резервировать.
 EXTEND FORM manufacturingOrder
-    PROPERTIES(o) checkAvailabilityLeft = checkAvailability
+    PROPERTIES(o) checkAvailabilityLeft
         SHOWIF (status(o) = ManufacturingOrderStatus.waiting OR status(o) = ManufacturingOrderStatus.ready)
-               AND NOT reserved(o) AND toReserve(o)
+               AND toReserve(o)
+
+    PROPERTIES(c) READONLY shortage
 ;
 
 DESIGN manufacturingOrder {
     REMOVE PROPERTY(checkAvailability(o));
     primaryActions {
-        MOVE PROPERTY(checkAvailabilityLeft) { valueClass = 'btn-primary'; }
+        MOVE PROPERTY(checkAvailabilityLeft(o)) { valueClass = 'btn-primary'; }
     }
 }

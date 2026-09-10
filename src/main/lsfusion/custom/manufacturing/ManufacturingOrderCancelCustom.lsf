@@ -1,0 +1,41 @@
+MODULE ManufacturingOrderCancelCustom;
+
+REQUIRE ManufacturingOrderCanceled, WorkOrderStatusCustom, WorkOrderResCustom, WorkCenterLoad;
+
+NAMESPACE Manufacturing;
+
+// Отмена заказа не доходила до заданий и этапов: задания оставались открытыми,
+// их можно было запустить и закрыть, а проводки этапов продолжали двигать склад.
+
+canceled 'Canceled' (WorkOrder w) = canceled(manufacturingOrder(w));
+
+EXTEND CLASS WorkOrderStatus {
+    canceled 'Canceled'
+}
+status(WorkOrder w) += WHEN canceled(w) THEN WorkOrderStatus.canceled;
+closed(WorkOrderStatus s) += WHEN s = WorkOrderStatus.canceled THEN TRUE;
+color(WorkOrderStatus s) += WHEN s = WorkOrderStatus.canceled THEN RGB(181,195,247);
+
+CONSTRAINT SET(inProgress(WorkOrder w)) AND canceled(w)
+    MESSAGE 'Производственный заказ отменён: задание нельзя запустить';
+
+CONSTRAINT SET(done(WorkOrder w)) AND canceled(w)
+    MESSAGE 'Производственный заказ отменён: задание нельзя выполнить';
+
+// Проводки этапов отменённого заказа оставались активными и продолжали двигать склад.
+// Гасим их через уже существующий признак этапа: событием, а не формулой active(WorkStep),
+// чтобы правка не переписала задним числом движения ранее отменённых заказов.
+// Если выпуск отменяемого заказа уже израсходован, снятие прихода упрётся в запрет
+// отрицательного остатка (InvLedger.lsf) — это и есть нужная защита.
+WHEN SET(canceled(ManufacturingOrder o)) DO
+    canceled(WorkStep s) <- TRUE WHERE manufacturingOrder(s) = o;
+
+WHEN DROPPED(canceled(ManufacturingOrder o)) DO
+    canceled(WorkStep s) <- NULL WHERE manufacturingOrder(s) = o;
+
+// Резерв отменённого заказа снимается сам: регистр ManufacturingOrderRes завязан
+// на статус заказа (ManufacturingOrderRes.lsf:12-15). Сами значения reserved/ready
+// не чистим, чтобы снятие отмены возвращало заказ в прежнее состояние.
+
+// Отменённый заказ не занимает рабочий центр.
+skipLoad(WorkOrder w) += TRUE IF canceled(w);
